@@ -82,10 +82,9 @@ using std::placeholders::_1;
 // Send: 0x0600000 0x23022001 0xpppppppp
 
 // Notes:
-// Position: 32bit signed integer
+// Position: a 32bit signed integer
 // A value of 10,000 represents 360 degrees
-// Use the Formula: (Position / 10,000) * 360 to convert to degrees or
-// to convert from degrees to position: (Degrees * 10,000/360)
+// Use the Formula: (Degrees * 10,000/360)
 // For example:
 // 76 degrees * (10,000/360) = 2,111 = 0x0000083F
 // So:
@@ -111,30 +110,105 @@ class KeyaServo : public rclcpp::Node
 
     void initialize()
     {
+      heartbeat_timer_ = this->create_wall_timer(
+        heartbeat_interval_, std::bind(&KeyaServo::sendHeartbeat, this));
+
       position_subscriber_ = this->create_subscription<std_msgs::msg::Float32>(
       "position", 10, std::bind(&KeyaServo::position_callback, this, _1));
     }
 
     void position_callback(const std_msgs::msg::Float32::SharedPtr msg)
     {
+      float degrees = msg->data;
+
+      // Set the position of the motor.
+      sendDisable();
+      sendEnable();
+
+      int32_t position = (int32_t)(DegToRad(degrees) * 10000.0f);
+      current_position_ = position;
+
+      sendSetPosition(position);
+    }
+
+    void sendHeartbeat()
+    {
+      sendSetPosition(current_position_);
+    }
+
+    void sendEnable()
+    {
+      send_can_message(can_id_ + 0x0600000, (uint8_t*)"\x23\x0D\x20\x01\x00\x00\x00\x00");
+    }
+
+    void sendDisable()
+    {
+      send_can_message(can_id_ + 0x0600000, (uint8_t*)"\x23\x0C\x20\x01\x00\x00\x00\x00");
+    }
+
+    void sendSetSpeed(int32_t speed)
+    {
+      uint8_t data[8];
+      data[0] = 0x23;
+      data[1] = 0x00;
+      data[2] = 0x20;
+      data[3] = 0x01;
+      data[4] = (speed >> 24) & 0xFF;
+      data[5] = (speed >> 16) & 0xFF;
+      data[6] = (speed >> 8) & 0xFF;
+      data[7] = speed & 0xFF;
+      send_can_message(can_id_ + 0x0600000, data);
+    }
+
+    void sendSetPosition(float angle)
+    {
+      // Use the Formula: (angle / 10,000) * 360 to convert to degrees or
+      // to convert from degrees to position: (Degrees * 10,000/360)
+      // For example:
+      // 76 degrees * (10,000/360) = 2,111 = 0x0000083F
+      // So:
+      // 0x0600000 0x23022001 0x083F0000
+
+      int32_t position = (int32_t)(angle * 10000.0f / 360.0f);
+
+      uint8_t data[8];
+      data[0] = 0x23;
+      data[1] = 0x02;
+      data[2] = 0x20;
+      data[3] = 0x01;
+      data[4] = (position >> 24) & 0xFF;
+      data[5] = (position >> 16) & 0xFF;
+      data[6] = (position >> 8) & 0xFF;
+      data[7] = position & 0xFF;
+
+      send_can_message(can_id_ + 0x0600000, data);
+    }
+
+    void send_can_message(uint32_t id, uint8_t data[8])
+    {
+      // Create a can frame with a heartbeat message
+      can_msgs::msg::Frame frame;
+      frame.id = id;
+      frame.is_extended = false;
+      frame.is_rtr = false;
+      frame.is_error = false;
+      frame.dlc = 8;
+      memmove(frame.data.data(), data, 8);
+
+      // Publish the frame
+      can_publisher_->publish(frame);
     }
 
 
   private:
 
-  // TODO: Add a parameter for the CAN ID
-  // TODO: Add a parameter for the CAN interface
-  // TODO: Add a parameter for the CAN baud rate
-  // TODO: Add a parameter for the CAN timeout
-  // TODO: Add a parameter for the CAN heartbeat rate
-
-  // ROS subscriber for motor position
+  uint32_t can_id_ = 1;
+  std::chrono::milliseconds heartbeat_interval_ = 1000ms;
+  int32_t current_position_ = 0;
 
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr position_subscriber_;
-
-  // ROS publisher for ros2_socketcan_msgs::msg::Frame
   rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr can_publisher_;
-
+  rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 int main(int argc, char * argv[])
