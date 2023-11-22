@@ -113,8 +113,32 @@ class KeyaServo : public rclcpp::Node
       heartbeat_timer_ = this->create_wall_timer(
         heartbeat_interval_, std::bind(&KeyaServo::sendHeartbeat, this));
 
+      can_subscriber_ = this->create_subscription<can_msgs::msg::Frame>(
+        "/from_can_bus", 10, std::bind(&KeyaServo::can_callback, this, _1));
+
       position_subscriber_ = this->create_subscription<std_msgs::msg::Float32>(
-      "position", 10, std::bind(&KeyaServo::position_callback, this, _1));
+        "/position", 1, std::bind(&KeyaServo::position_callback, this, _1));
+
+      can_publisher_ = this->create_publisher<can_msgs::msg::Frame>("/to_can_bus", 500);
+
+      current_position_ = 3000;
+      sendDisable();
+      sendEnable();
+    }
+
+    void can_callback(const can_msgs::msg::Frame::SharedPtr msg)
+    {
+      // Check if the message is for this motor
+      if (msg->id != (can_id_ + 0x07000000))
+      {
+        return;
+      }
+
+      // Check if the message is a heartbeat
+      if (msg->data[0] == 0x07)
+      {
+
+      }
     }
 
     void position_callback(const std_msgs::msg::Float32::SharedPtr msg)
@@ -138,12 +162,14 @@ class KeyaServo : public rclcpp::Node
 
     void sendEnable()
     {
-      send_can_message(can_id_ + 0x0600000, (uint8_t*)"\x23\x0D\x20\x01\x00\x00\x00\x00");
+      uint8_t data[8] = {0x23, 0x0D, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00};
+      send_can_message(can_id_ + 0x06000000, data);
     }
 
     void sendDisable()
     {
-      send_can_message(can_id_ + 0x0600000, (uint8_t*)"\x23\x0C\x20\x01\x00\x00\x00\x00");
+      uint8_t data[8] = {0x23, 0x0C, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00};
+      send_can_message(can_id_ + 0x06000000, data);
     }
 
     void sendSetSpeed(int32_t speed)
@@ -153,11 +179,11 @@ class KeyaServo : public rclcpp::Node
       data[1] = 0x00;
       data[2] = 0x20;
       data[3] = 0x01;
-      data[4] = (speed >> 24) & 0xFF;
-      data[5] = (speed >> 16) & 0xFF;
-      data[6] = (speed >> 8) & 0xFF;
-      data[7] = speed & 0xFF;
-      send_can_message(can_id_ + 0x0600000, data);
+      data[4] = (speed >> 8) & 0xFF;
+      data[5] = speed & 0xFF;
+      data[6] = (speed >> 24) & 0xFF;
+      data[7] = (speed >> 16) & 0xFF;
+      send_can_message(can_id_ + 0x06000000, data);
     }
 
     void sendSetPosition(float angle)
@@ -167,7 +193,7 @@ class KeyaServo : public rclcpp::Node
       // For example:
       // 76 degrees * (10,000/360) = 2,111 = 0x0000083F
       // So:
-      // 0x0600000 0x23022001 0x083F0000
+      // 0x0600000 0x23022001 0x0083F0000
 
       int32_t position = (int32_t)(angle * 10000.0f / 360.0f);
 
@@ -176,24 +202,31 @@ class KeyaServo : public rclcpp::Node
       data[1] = 0x02;
       data[2] = 0x20;
       data[3] = 0x01;
-      data[4] = (position >> 24) & 0xFF;
-      data[5] = (position >> 16) & 0xFF;
-      data[6] = (position >> 8) & 0xFF;
-      data[7] = position & 0xFF;
+      data[4] = (position >> 8) & 0xFF;
+      data[5] = position & 0xFF;
+      data[6] = (position >> 24) & 0xFF;
+      data[7] = (position >> 16) & 0xFF;
 
-      send_can_message(can_id_ + 0x0600000, data);
+      send_can_message(can_id_ + 0x06000000, data);
     }
 
-    void send_can_message(uint32_t id, uint8_t data[8])
+    void send_can_message(uint32_t id, uint8_t* data)
     {
       // Create a can frame with a heartbeat message
       can_msgs::msg::Frame frame;
       frame.id = id;
-      frame.is_extended = false;
+      frame.is_extended = true;
       frame.is_rtr = false;
       frame.is_error = false;
       frame.dlc = 8;
-      memmove(frame.data.data(), data, 8);
+      frame.data[0] = data[0];
+      frame.data[1] = data[1];
+      frame.data[2] = data[2];
+      frame.data[3] = data[3];
+      frame.data[4] = data[4];
+      frame.data[5] = data[5];
+      frame.data[6] = data[6];
+      frame.data[7] = data[7];
 
       // Publish the frame
       can_publisher_->publish(frame);
@@ -203,10 +236,12 @@ class KeyaServo : public rclcpp::Node
   private:
 
   uint32_t can_id_ = 1;
-  std::chrono::milliseconds heartbeat_interval_ = 1000ms;
+  std::chrono::milliseconds heartbeat_interval_ = 500ms;
   int32_t current_position_ = 0;
 
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr position_subscriber_;
+
+  rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscriber_;
   rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr can_publisher_;
   rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
