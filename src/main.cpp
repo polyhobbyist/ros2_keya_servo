@@ -121,9 +121,10 @@ class KeyaServo : public rclcpp::Node
 
       can_publisher_ = this->create_publisher<can_msgs::msg::Frame>("/to_can_bus", 500);
 
-      current_position_ = 3000;
       sendDisable();
-      sendEnable();
+      std::this_thread::sleep_for(100ms);
+      sendPositionControlMode();
+      sendPositionReset();
     }
 
     void can_callback(const can_msgs::msg::Frame::SharedPtr msg)
@@ -144,20 +145,31 @@ class KeyaServo : public rclcpp::Node
     void position_callback(const std_msgs::msg::Float32::SharedPtr msg)
     {
       float degrees = msg->data;
-
-      // Set the position of the motor.
-      sendDisable();
       sendEnable();
+      std::this_thread::sleep_for(100ms);
 
-      int32_t position = (int32_t)(DegToRad(degrees) * 10000.0f);
+      int32_t position = (int32_t)((DegToRad(degrees) * 10000.0f) / 360.0f);
       current_position_ = position;
 
       sendSetPosition(position);
     }
 
+    void sendPositionControlMode()
+    {
+      uint8_t data[8] = {0x03, 0x0D, 0x20, 0x31, 0x00, 0x00, 0x00, 0x00};
+      send_can_message(can_id_ + 0x06000000, data);
+    }
+
+    void sendPositionReset()
+    {
+      uint8_t data[8] = {0x23, 0x0C, 0x20, 0x09, 0x00, 0x00, 0x00, 0x0};
+      send_can_message(can_id_ + 0x06000000, data);
+    }
+
     void sendHeartbeat()
     {
-      sendSetPosition(current_position_);
+      uint8_t data[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+      send_can_message(can_id_ + 0x06000000, data);
     }
 
     void sendEnable()
@@ -238,6 +250,8 @@ class KeyaServo : public rclcpp::Node
   uint32_t can_id_ = 1;
   std::chrono::milliseconds heartbeat_interval_ = 500ms;
   int32_t current_position_ = 0;
+
+  bool speed_or_position_ = true; // True = speed, False = position
 
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr position_subscriber_;
 
