@@ -29,6 +29,8 @@ SOFTWARE.
 #include "std_msgs/msg/float32.hpp"
 #include "can_msgs/msg/frame.hpp"
 
+#include "ros2_keya_servo/srv/position.hpp"
+
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 
@@ -121,10 +123,25 @@ class KeyaServo : public rclcpp::Node
 
       can_publisher_ = this->create_publisher<can_msgs::msg::Frame>("/to_can_bus", 500);
 
+      // Create a ROS 2 service to expose an integer value for the position of the servo
+      position_service_ = this->create_service<ros2_keya_servo_msgs::srv::Position>(
+        "/position_service", std::bind(&KeyaServo::position_service_callback, this, _1, _2, _3));
+      
+
       sendDisable();
       std::this_thread::sleep_for(100ms);
       sendPositionControlMode();
       sendPositionReset();
+    }
+
+    void position_service_callback(
+      const std::shared_ptr<rmw_request_id_t> request_header,
+      const std::shared_ptr<ros2_keya_servo_msgs::srv::Position::Request> request,
+      const std::shared_ptr<ros2_keya_servo_msgs::srv::Position::Response> response)
+    {
+      (void)request_header;
+      (void)request;
+      response->position = current_position_;
     }
 
     void can_callback(const can_msgs::msg::Frame::SharedPtr msg)
@@ -138,7 +155,9 @@ class KeyaServo : public rclcpp::Node
       // Check if the message is a heartbeat
       if (msg->data[0] == 0x07)
       {
-
+        // Read position value from heartbeat and set it as current_position_
+        int32_t position = (msg->data[4] << 8) | msg->data[5];
+        current_position_ = position;
       }
     }
 

@@ -16,6 +16,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(ros2_socketcan REQUIRED)
 find_package(can_msgs REQUIRED)
+find_package(ros2_keya_servo_msgs REQUIRED)
 
 include_directories(
   include/${PROJECT_NAME}
@@ -26,7 +27,8 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   std_msgs
   ros2_socketcan
-  can_msgs)
+  can_msgs
+  ros2_keya_servo_msgs)
 
 install(TARGETS ${PROJECT_NAME}
     ARCHIVE DESTINATION lib
