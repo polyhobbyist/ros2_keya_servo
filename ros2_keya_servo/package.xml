@@ -11,7 +11,7 @@
   <depend>std_msgs</depend>
   <depend>ros2_keya_servo_msgs</depend>
   <depend>ros2_socketcan</depend>
-  <depend>ros2_socketcan_msgs</depend>
+  <depend>can_msgs</depend>
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <test_depend>ament_lint_auto</test_depend>

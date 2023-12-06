@@ -26,13 +26,15 @@ SOFTWARE.
 #include <chrono>
 #include <math.h>
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/float32.hpp"
+#include "std_msgs/msg/int32.hpp"
 #include "can_msgs/msg/frame.hpp"
 
-#include "ros2_keya_servo/srv/position.hpp"
+#include "ros2_keya_servo_msgs/srv/position.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
+using std::placeholders::_2;
+using std::placeholders::_3;
 
 // Keya Motor CAN Commands
 // 
@@ -118,7 +120,7 @@ class KeyaServo : public rclcpp::Node
       can_subscriber_ = this->create_subscription<can_msgs::msg::Frame>(
         "/from_can_bus", 10, std::bind(&KeyaServo::can_callback, this, _1));
 
-      position_subscriber_ = this->create_subscription<std_msgs::msg::Float32>(
+      position_subscriber_ = this->create_subscription<std_msgs::msg::Int32>(
         "/position", 1, std::bind(&KeyaServo::position_callback, this, _1));
 
       can_publisher_ = this->create_publisher<can_msgs::msg::Frame>("/to_can_bus", 500);
@@ -161,16 +163,16 @@ class KeyaServo : public rclcpp::Node
       }
     }
 
-    void position_callback(const std_msgs::msg::Float32::SharedPtr msg)
+    void position_callback(const std_msgs::msg::Int32::SharedPtr msg)
     {
-      float degrees = msg->data;
+      //float degrees = msg->data;
       sendEnable();
       std::this_thread::sleep_for(100ms);
 
-      int32_t position = (int32_t)((DegToRad(degrees) * 10000.0f) / 360.0f);
-      current_position_ = position;
+      //int32_t position = (int32_t)((DegToRad(degrees) * 10000.0f) / 360.0f);
+      current_position_ = msg->data;
 
-      sendSetPosition(position);
+      sendSetPosition(current_position_);
     }
 
     void sendPositionControlMode()
@@ -217,17 +219,8 @@ class KeyaServo : public rclcpp::Node
       send_can_message(can_id_ + 0x06000000, data);
     }
 
-    void sendSetPosition(float angle)
+    void sendSetPosition(int32_t position)
     {
-      // Use the Formula: (angle / 10,000) * 360 to convert to degrees or
-      // to convert from degrees to position: (Degrees * 10,000/360)
-      // For example:
-      // 76 degrees * (10,000/360) = 2,111 = 0x0000083F
-      // So:
-      // 0x0600000 0x23022001 0x0083F0000
-
-      int32_t position = (int32_t)(angle * 10000.0f / 360.0f);
-
       uint8_t data[8];
       data[0] = 0x23;
       data[1] = 0x02;
@@ -272,7 +265,8 @@ class KeyaServo : public rclcpp::Node
 
   bool speed_or_position_ = true; // True = speed, False = position
 
-  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr position_subscriber_;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr position_subscriber_;
+  rclcpp::Service<ros2_keya_servo_msgs::srv::Position>::SharedPtr position_service_;
 
   rclcpp::Subscription<can_msgs::msg::Frame>::SharedPtr can_subscriber_;
   rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr can_publisher_;
